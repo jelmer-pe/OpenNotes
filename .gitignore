@@ -1,0 +1,18 @@
+# Build artifacts
+.build/
+LocalNotes.app/
+LocalNotes/Resources/editor.bundle.js
+WebEditor/dist/
+WebEditor/node_modules/
+
+# macOS
+.DS_Store
+*.swp
+*~
+
+# Xcode
+*.xcuserdata
+xcuserdata/
+
+# SPM
+Package.resolved
