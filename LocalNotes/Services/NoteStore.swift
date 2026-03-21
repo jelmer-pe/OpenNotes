@@ -28,12 +28,22 @@ class NoteStore {
     }
 
     func readNote(_ filename: String) -> Note? {
-        let url = notesDirectory.appendingPathComponent(filename)
-        guard let content = try? String(contentsOf: url, encoding: .utf8) else {
+        let mdURL = notesDirectory.appendingPathComponent(filename)
+        let jsonURL = notesDirectory.appendingPathComponent(jsonFilename(for: filename))
+
+        // Read content from hidden JSON file (source of truth), fall back to .md
+        let content: String
+        if let jsonContent = try? String(contentsOf: jsonURL, encoding: .utf8) {
+            content = jsonContent
+        } else if let mdContent = try? String(contentsOf: mdURL, encoding: .utf8) {
+            content = mdContent
+        } else {
             return nil
         }
 
-        let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+        // Use .md file for file attributes (it's always present)
+        let attrsURL = FileManager.default.fileExists(atPath: mdURL.path) ? mdURL : jsonURL
+        let attrs = try? FileManager.default.attributesOfItem(atPath: attrsURL.path)
         let createdAt = (attrs?[.creationDate] as? Date) ?? Date()
         let modifiedAt = (attrs?[.modificationDate] as? Date) ?? Date()
 
@@ -46,9 +56,14 @@ class NoteStore {
         )
     }
 
-    func saveNote(_ filename: String, content: String) {
-        let url = notesDirectory.appendingPathComponent(filename)
-        try? content.write(to: url, atomically: true, encoding: .utf8)
+    func saveNote(_ filename: String, json: String, markdown: String) {
+        // Save TipTap JSON to hidden file (source of truth)
+        let jsonURL = notesDirectory.appendingPathComponent(jsonFilename(for: filename))
+        try? json.write(to: jsonURL, atomically: true, encoding: .utf8)
+
+        // Save human-readable markdown to visible .md file
+        let mdURL = notesDirectory.appendingPathComponent(filename)
+        try? markdown.write(to: mdURL, atomically: true, encoding: .utf8)
     }
 
     func createNote(title: String = "Untitled") -> Note {
@@ -109,6 +124,12 @@ class NoteStore {
         let newURL = notesDirectory.appendingPathComponent(newFilename)
         do {
             try FileManager.default.moveItem(at: oldURL, to: newURL)
+            // Also rename the hidden JSON file
+            let oldJsonURL = notesDirectory.appendingPathComponent(jsonFilename(for: filename))
+            let newJsonURL = notesDirectory.appendingPathComponent(jsonFilename(for: newFilename))
+            if FileManager.default.fileExists(atPath: oldJsonURL.path) {
+                try FileManager.default.moveItem(at: oldJsonURL, to: newJsonURL)
+            }
             print("[NoteStore] Renamed \(filename) → \(newFilename)")
             return newFilename
         } catch {
@@ -118,8 +139,10 @@ class NoteStore {
     }
 
     func deleteNote(_ filename: String) {
-        let url = notesDirectory.appendingPathComponent(filename)
-        try? FileManager.default.removeItem(at: url)
+        let mdURL = notesDirectory.appendingPathComponent(filename)
+        let jsonURL = notesDirectory.appendingPathComponent(jsonFilename(for: filename))
+        try? FileManager.default.removeItem(at: mdURL)
+        try? FileManager.default.removeItem(at: jsonURL)
     }
 
     // MARK: - Private
@@ -193,6 +216,13 @@ class NoteStore {
             .replacingOccurrences(of: #"[^a-z0-9]+"#, with: "-", options: .regularExpression)
             .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
         return String(slug.prefix(50))
+    }
+
+    /// Convert a .md filename to its hidden .json counterpart
+    /// e.g. "2026-03-20-my-note.md" → ".2026-03-20-my-note.json"
+    func jsonFilename(for mdFilename: String) -> String {
+        let base = mdFilename.hasSuffix(".md") ? String(mdFilename.dropLast(3)) : mdFilename
+        return ".\(base).json"
     }
 
     private static let dateFormatter: DateFormatter = {
