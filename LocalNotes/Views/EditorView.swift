@@ -58,6 +58,19 @@ struct EditorView: View {
                 }
             }
 
+            // Onboarding overlay
+            if appState.isShowingOnboarding {
+                Color.black.opacity(0.2)
+                    .onTapGesture { appState.dismissOnboarding() }
+
+                VStack {
+                    Spacer()
+                    OnboardingView(appState: appState)
+                        .padding(.horizontal, 32)
+                    Spacer()
+                }
+            }
+
             // Note browser overlay
             if appState.isShowingBrowser {
                 Color.black.opacity(0.001)
@@ -281,5 +294,119 @@ struct ShortcutsPalette: View {
         }
         .padding(.horizontal, 19)
         .padding(.vertical, 7)
+    }
+}
+
+struct OnboardingView: View {
+    @ObservedObject var appState: AppState
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            VStack(spacing: 8) {
+                Image(systemName: "note.text")
+                    .font(.system(size: 28, weight: .light))
+                    .foregroundColor(.primary.opacity(0.7))
+
+                Text("Welcome to Open Notes")
+                    .font(.system(size: 16, weight: .semibold))
+
+                Text("A lightweight notes app that floats above your windows.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(.top, 24)
+            .padding(.bottom, 20)
+
+            Divider()
+                .padding(.horizontal, 20)
+
+            // Tips
+            VStack(spacing: 14) {
+                onboardingRow(
+                    icon: "option",
+                    title: "Toggle from anywhere",
+                    description: "Press Option+N to show or hide this panel globally.",
+                    keys: "⌥ N"
+                )
+                onboardingRow(
+                    icon: "doc.text.magnifyingglass",
+                    title: "Browse your notes",
+                    description: "Quickly find and switch between notes.",
+                    keys: "⌘ P"
+                )
+                onboardingRow(
+                    icon: "command",
+                    title: "Keyboard shortcuts",
+                    description: "View all available shortcuts.",
+                    keys: "⌘ K"
+                )
+                onboardingRow(
+                    icon: "folder",
+                    title: "Stored locally",
+                    description: "Notes are saved as files in ~/Documents/Notes.",
+                    keys: nil
+                )
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+
+            Divider()
+                .padding(.horizontal, 20)
+
+            // Dismiss button
+            Button(action: { appState.dismissOnboarding() }) {
+                Text("Get Started")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(Color.accentColor)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+            .padding(.bottom, 20)
+        }
+        .frame(maxWidth: 340)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .shadow(color: .black.opacity(0.25), radius: 30, y: 12)
+    }
+
+    private func onboardingRow(icon: String, title: String, description: String, keys: String?) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.secondary)
+                .frame(width: 24, height: 24)
+                .background(Color.primary.opacity(0.06))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 12, weight: .medium))
+                Text(description)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer(minLength: 4)
+
+            if let keys = keys {
+                HStack(spacing: 3) {
+                    ForEach(keys.components(separatedBy: " "), id: \.self) { key in
+                        Text(key)
+                            .font(.system(size: 10, weight: .medium, design: .rounded))
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Color.primary.opacity(0.08))
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                    }
+                }
+            }
+        }
     }
 }
