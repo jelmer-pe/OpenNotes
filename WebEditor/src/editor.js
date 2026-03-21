@@ -5,6 +5,7 @@ import TaskItem from '@tiptap/extension-task-item'
 import Link from '@tiptap/extension-link'
 import Placeholder from '@tiptap/extension-placeholder'
 import { Markdown } from 'tiptap-markdown'
+import { TextSelection, EditorState } from '@tiptap/pm/state'
 
 let editor = null
 
@@ -152,6 +153,16 @@ const ExtraShortcuts = Extension.create({
         return false
       },
 
+      // Ctrl+Cmd+Up moves list item up
+      'Mod-Ctrl-ArrowUp': ({ editor }) => {
+        return moveListItem(editor, 'up')
+      },
+
+      // Ctrl+Cmd+Down moves list item down
+      'Mod-Ctrl-ArrowDown': ({ editor }) => {
+        return moveListItem(editor, 'down')
+      },
+
       // Backspace at start of list item: lift to paragraph instead of joining with previous
       'Backspace': ({ editor }) => {
         const { state } = editor
@@ -181,6 +192,51 @@ const ExtraShortcuts = Extension.create({
   },
 })
 
+function moveListItem(editor, direction) {
+  const { state } = editor
+  const { $from } = state.selection
+
+  // Find the closest list item
+  let depth = $from.depth
+  while (depth > 0) {
+    const name = $from.node(depth).type.name
+    if (name === 'listItem' || name === 'taskItem') break
+    depth--
+  }
+  if (depth === 0) return false
+
+  const parent = $from.node(depth - 1)
+  const index = $from.index(depth - 1)
+  const item = parent.child(index)
+  const itemPos = $from.before(depth)
+  const cursorPos = $from.pos
+
+  if (direction === 'up') {
+    if (index === 0) return false
+    const prev = parent.child(index - 1)
+    const rangeStart = itemPos - prev.nodeSize
+    const newCursorPos = cursorPos - prev.nodeSize
+
+    const tr = state.tr
+    tr.replaceWith(rangeStart, itemPos + item.nodeSize, [item, prev])
+    tr.setSelection(TextSelection.create(tr.doc, newCursorPos))
+    tr.scrollIntoView()
+    editor.view.dispatch(tr)
+    return true
+  } else {
+    if (index >= parent.childCount - 1) return false
+    const next = parent.child(index + 1)
+    const newCursorPos = cursorPos + next.nodeSize
+
+    const tr = state.tr
+    tr.replaceWith(itemPos, itemPos + item.nodeSize + next.nodeSize, [next, item])
+    tr.setSelection(TextSelection.create(tr.doc, newCursorPos))
+    tr.scrollIntoView()
+    editor.view.dispatch(tr)
+    return true
+  }
+}
+
 function createEditor() {
   editor = new Editor({
     element: document.getElementById('editor'),
@@ -202,7 +258,9 @@ function createEditor() {
     ],
     autofocus: true,
     onUpdate: ({ editor }) => {
-      const md = editor.storage.markdown.getMarkdown()
+      let md = editor.storage.markdown.getMarkdown()
+      // Strip zero-width spaces used as empty paragraph placeholders
+      md = md.replace(/\u200B/g, '')
       window.webkit?.messageHandlers?.bridge?.postMessage(
         JSON.stringify({ type: 'contentChanged', markdown: md })
       )
@@ -341,10 +399,32 @@ function showLinkInput() {
   })
 }
 
+// Called from Swift to move list item up/down
+window.moveListItemFromSwift = function(direction) {
+  if (editor) {
+    moveListItem(editor, direction)
+  }
+}
+
 // Called from Swift to load markdown content
 window.loadMarkdown = function(md) {
   if (editor) {
-    editor.commands.setContent(md)
+    // Restore empty paragraphs: each pair of extra newlines beyond \n\n = one empty paragraph
+    const preserved = md.replace(/\n{3,}/g, (match) => {
+      const emptyParas = Math.floor((match.length - 2) / 2)
+      let result = '\n\n'
+      for (let i = 0; i < emptyParas; i++) {
+        result += '\u200B\n\n'
+      }
+      return result
+    })
+    editor.commands.setContent(preserved)
+    // Reset editor state to clear undo history — prevents Cmd+Z crossing between notes
+    const freshState = EditorState.create({
+      doc: editor.state.doc,
+      plugins: editor.state.plugins,
+    })
+    editor.view.updateState(freshState)
   }
 }
 
@@ -378,6 +458,13 @@ document.addEventListener('click', (e) => {
     if (menu) menu.classList.remove('visible')
   }
 })
+
+// Called from Swift to move list items
+window.moveListItemBridge = function(direction) {
+  if (editor) {
+    moveListItem(editor, direction)
+  }
+}
 
 // Called from Swift to set dimmed state
 window.setDimmed = function(dimmed) {

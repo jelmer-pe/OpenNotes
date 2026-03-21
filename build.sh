@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build LocalNotes as a proper .app bundle
+# Build Open Notes as a proper .app bundle
 set -e
 
 cd "$(dirname "$0")"
@@ -12,7 +12,7 @@ cp WebEditor/src/editor.css LocalNotes/Resources/editor.css
 echo "Building..."
 swift build -c release 2>&1 | tail -5
 
-APP_DIR="LocalNotes.app/Contents"
+APP_DIR="Open Notes.app/Contents"
 mkdir -p "$APP_DIR/MacOS"
 mkdir -p "$APP_DIR/Resources"
 
@@ -28,6 +28,6 @@ cp .build/release/LocalNotes_LocalNotes.bundle/editor.bundle.js "$APP_DIR/Resour
 cp .build/release/LocalNotes_LocalNotes.bundle/editor.css "$APP_DIR/Resources/"
 
 echo ""
-echo "✓ Built LocalNotes.app"
-echo "  Run with: open LocalNotes.app"
-echo "  Or install to /Applications: cp -r LocalNotes.app /Applications/"
+echo "✓ Built Open Notes.app"
+echo "  Run with: open \"Open Notes.app\""
+echo "  Or install to /Applications: cp -r \"Open Notes.app\" /Applications/"

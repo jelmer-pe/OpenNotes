@@ -8,7 +8,7 @@ struct LocalNotesApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     var body: some Scene {
-        MenuBarExtra("Notes", systemImage: "note.text") {
+        MenuBarExtra("Open Notes", systemImage: "note.text") {
             Button("Show/Hide Notes") {
                 appDelegate.togglePanel()
             }
@@ -48,6 +48,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.setupPanel()
             self?.setupHotKey()
             self?.setupKeyMonitor()
+            self?.showPanel()
         }
     }
 
@@ -147,6 +148,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     return nil
                 default:
                     break
+                }
+            }
+
+            // Ctrl+Cmd+Up/Down — move list item
+            if hasCmd && event.modifierFlags.contains(.control) {
+                if event.keyCode == 126 { // up arrow
+                    self.evaluateJS("window.moveListItemBridge('up')")
+                    return nil
+                }
+                if event.keyCode == 125 { // down arrow
+                    self.evaluateJS("window.moveListItemBridge('down')")
+                    return nil
                 }
             }
 

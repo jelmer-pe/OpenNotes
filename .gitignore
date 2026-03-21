@@ -1,6 +1,7 @@
 # Build artifacts
 .build/
 LocalNotes.app/
+Open Notes.app/
 LocalNotes/Resources/editor.bundle.js
 WebEditor/dist/
 WebEditor/node_modules/

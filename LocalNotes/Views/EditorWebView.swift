@@ -105,6 +105,7 @@ struct EditorWebView: NSViewRepresentable {
                         self?.appState.contentChanged(markdown)
                     }
 
+
                 default:
                     break
                 }
@@ -116,5 +117,6 @@ struct EditorWebView: NSViewRepresentable {
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             // Editor HTML loaded, wait for 'ready' message from JS
         }
+
     }
 }
