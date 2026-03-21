@@ -2,14 +2,41 @@ import Foundation
 
 class NoteStore {
     let notesDirectory: URL
+    let imagesDirectory: URL
 
     init() {
         let home = FileManager.default.homeDirectoryForCurrentUser
         notesDirectory = home.appendingPathComponent("Documents/Notes")
+        imagesDirectory = notesDirectory.appendingPathComponent("images")
 
-        // Create directory if it doesn't exist
-        if !FileManager.default.fileExists(atPath: notesDirectory.path) {
-            try? FileManager.default.createDirectory(at: notesDirectory, withIntermediateDirectories: true)
+        // Create directories if they don't exist
+        for dir in [notesDirectory, imagesDirectory] {
+            if !FileManager.default.fileExists(atPath: dir.path) {
+                try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            }
+        }
+    }
+
+    /// Save image data to the images directory. Returns the file URL.
+    func saveImage(data: Data, mimeType: String) -> URL? {
+        let ext: String
+        switch mimeType {
+        case "image/png": ext = "png"
+        case "image/jpeg", "image/jpg": ext = "jpg"
+        case "image/gif": ext = "gif"
+        case "image/webp": ext = "webp"
+        default: ext = "png"
+        }
+
+        let filename = "\(UUID().uuidString).\(ext)"
+        let url = imagesDirectory.appendingPathComponent(filename)
+
+        do {
+            try data.write(to: url)
+            return url
+        } catch {
+            print("[NoteStore] Failed to save image: \(error)")
+            return nil
         }
     }
 

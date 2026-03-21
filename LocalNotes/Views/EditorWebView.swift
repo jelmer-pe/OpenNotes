@@ -17,16 +17,19 @@ struct EditorWebView: NSViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.setValue(false, forKey: "drawsBackground")
 
+        // Grant read access to root so WKWebView can load both bundle resources and note images
+        let rootDir = URL(fileURLWithPath: "/")
+
         // Load editor HTML from bundle resources
         if let htmlURL = Bundle.main.url(forResource: "editor", withExtension: "html", subdirectory: "Resources") {
-            webView.loadFileURL(htmlURL, allowingReadAccessTo: htmlURL.deletingLastPathComponent())
+            webView.loadFileURL(htmlURL, allowingReadAccessTo: rootDir)
         } else {
             // Fallback: try finding in the app's resource directory
             let resourcePath = Bundle.main.resourcePath ?? ""
             let htmlPath = (resourcePath as NSString).appendingPathComponent("editor.html")
             let htmlURL = URL(fileURLWithPath: htmlPath)
             if FileManager.default.fileExists(atPath: htmlPath) {
-                webView.loadFileURL(htmlURL, allowingReadAccessTo: htmlURL.deletingLastPathComponent())
+                webView.loadFileURL(htmlURL, allowingReadAccessTo: rootDir)
             }
         }
 
@@ -114,6 +117,49 @@ struct EditorWebView: NSViewRepresentable {
                         self?.appState.contentChanged(jsonStr)
                     }
 
+                case "imagePaste":
+                    if let base64Str = json["data"] as? String,
+                       let mimeType = json["mimeType"] as? String,
+                       let data = Data(base64Encoded: base64Str) {
+                        if let url = self?.appState.noteStore.saveImage(data: data, mimeType: mimeType) {
+                            let fileURL = url.absoluteString
+                            self?.webView?.evaluateJavaScript("insertImage('\(fileURL)')")
+                        }
+                    }
+
+                case "openInPreview":
+                    if let src = json["src"] as? String,
+                       let url = URL(string: src) {
+                        let filePath = url.path
+                        NSWorkspace.shared.open(
+                            [URL(fileURLWithPath: filePath)],
+                            withAppBundleIdentifier: "com.apple.Preview",
+                            options: [],
+                            additionalEventParamDescriptor: nil,
+                            launchIdentifiers: nil
+                        )
+                    }
+
+                case "copyImage":
+                    if let src = json["src"] as? String,
+                       let url = URL(string: src) {
+                        let filePath = url.path
+                        if let image = NSImage(contentsOfFile: filePath) {
+                            let pb = NSPasteboard.general
+                            pb.clearContents()
+                            pb.writeObjects([image])
+                        }
+                    }
+
+                case "saveImage":
+                    if let src = json["src"] as? String,
+                       let url = URL(string: src) {
+                        let filePath = url.path
+                        let sourceURL = URL(fileURLWithPath: filePath)
+                        let downloadsDir = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!
+                        let destURL = downloadsDir.appendingPathComponent(sourceURL.lastPathComponent)
+                        try? FileManager.default.copyItem(at: sourceURL, to: destURL)
+                    }
 
                 default:
                     break
