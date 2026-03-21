@@ -116,7 +116,7 @@ struct EditorView: View {
         }
         .animation(.easeInOut(duration: 0.15), value: appState.isHovering)
         .frame(height: 28)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(.ultraThinMaterial)
     }
 
     private var deleteCurrentNoteBar: some View {

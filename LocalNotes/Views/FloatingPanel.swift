@@ -17,7 +17,42 @@ class FloatingPanel: NSPanel, NSWindowDelegate {
         )
 
         self.delegate = self
-        self.contentView = contentView
+
+        // Add visual effect view for background blur + tint overlay
+        let visualEffect = NSVisualEffectView()
+        visualEffect.material = .hudWindow
+        visualEffect.blendingMode = .behindWindow
+        visualEffect.state = .active
+        visualEffect.translatesAutoresizingMaskIntoConstraints = false
+
+        // Semi-transparent overlay to control opacity
+        let tintView = NSView()
+        tintView.wantsLayer = true
+        tintView.layer?.backgroundColor = NSColor(white: 0.925, alpha: 0.85).cgColor
+        tintView.translatesAutoresizingMaskIntoConstraints = false
+
+        let container = NSView()
+        container.addSubview(visualEffect)
+        container.addSubview(tintView)
+        container.addSubview(contentView)
+        contentView.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            visualEffect.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            visualEffect.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            visualEffect.topAnchor.constraint(equalTo: container.topAnchor),
+            visualEffect.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            tintView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            tintView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            tintView.topAnchor.constraint(equalTo: container.topAnchor),
+            tintView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            contentView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            contentView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            contentView.topAnchor.constraint(equalTo: container.topAnchor),
+            contentView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
+
+        self.contentView = container
         self.titlebarAppearsTransparent = true
         self.titleVisibility = .hidden
         self.isFloatingPanel = true
@@ -26,7 +61,7 @@ class FloatingPanel: NSPanel, NSWindowDelegate {
         self.isMovableByWindowBackground = true
         self.hidesOnDeactivate = false
         self.animationBehavior = .utilityWindow
-        self.backgroundColor = .windowBackgroundColor
+        self.backgroundColor = .clear
         self.titlebarSeparatorStyle = .none
         self.minSize = NSSize(width: minWidth, height: minHeight)
         self.maxSize = NSSize(width: maxWidth, height: maxHeight)
