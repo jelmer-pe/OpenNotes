@@ -10,6 +10,7 @@ class AppState: ObservableObject {
     @Published var isHovering: Bool = true
     @Published var isShowingShortcuts: Bool = false
     @Published var confirmingDeleteCurrentNote: Bool = false
+    @Published var isShowingOnboarding: Bool = false
 
     let noteStore = NoteStore()
 
@@ -56,8 +57,23 @@ class AppState: ObservableObject {
     @Published var browserSelectedIndex = 0
     @Published var confirmingDeleteNote: Note?
 
+    private static let onboardingKey = "hasCompletedOnboarding"
+
+    var hasCompletedOnboarding: Bool {
+        get { UserDefaults.standard.bool(forKey: Self.onboardingKey) }
+        set { UserDefaults.standard.set(newValue, forKey: Self.onboardingKey) }
+    }
+
     init() {
         loadInitialNote()
+        if !UserDefaults.standard.bool(forKey: Self.onboardingKey) {
+            isShowingOnboarding = true
+        }
+    }
+
+    func dismissOnboarding() {
+        isShowingOnboarding = false
+        hasCompletedOnboarding = true
     }
 
     func loadInitialNote() {

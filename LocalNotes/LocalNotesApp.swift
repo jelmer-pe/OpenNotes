@@ -21,6 +21,11 @@ struct LocalNotesApp: App {
                 appDelegate.showPanel()
             }
 
+            Button("Welcome Guide") {
+                appDelegate.showPanel()
+                appDelegate.appState?.isShowingOnboarding = true
+            }
+
             Divider()
 
             Button("Quit") {
@@ -100,6 +105,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 default:
                     return nil // eat all keys during confirmation
                 }
+            }
+
+            // Escape to close onboarding
+            if appState.isShowingOnboarding && event.keyCode == 53 {
+                appState.dismissOnboarding()
+                return nil
             }
 
             // Escape to close shortcuts palette
