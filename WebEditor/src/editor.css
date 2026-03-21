@@ -33,7 +33,7 @@
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
   font-size: 12px;
-  line-height: 2.0;
+  line-height: 1.6;
   color: var(--text);
   background: transparent;
   -webkit-font-smoothing: antialiased;
@@ -93,7 +93,7 @@ body {
 
 /* Paragraphs */
 .tiptap p {
-  margin-bottom: 0.3em;
+  margin-bottom: 0.4em;
 }
 
 /* Bold, italic, strike */
@@ -148,7 +148,7 @@ body {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  height: 24px; /* matches line-height of 12px * 2.0 */
+  height: 19.2px; /* matches line-height of 12px * 1.6 */
 }
 
 .tiptap ul[data-type="taskList"] li > label input[type="checkbox"] {

@@ -144,15 +144,38 @@ class AppState: ObservableObject {
 
     func flushSave() {
         guard let content = pendingContent, let filename = currentNote?.filename else { return }
-        noteStore.saveNote(filename, content: content)
-
         // Update the in-memory note
+        let newTitle = extractTitle(content)
         currentNote?.content = content
-        currentNote?.title = extractTitle(content)
+        currentNote?.title = newTitle
         currentNote?.modifiedAt = Date()
+
+        // Rename file to match title, then save to the correct filename
+        let newFilename = noteStore.renameIfNeeded(filename, newTitle: newTitle)
+        if newFilename != filename {
+            updateFilenameReferences(from: filename, to: newFilename)
+        }
+        noteStore.saveNote(newFilename, content: content)
 
         pendingContent = nil
         saveTimer?.invalidate()
+    }
+
+    /// Update all stored references when a note file is renamed
+    private func updateFilenameReferences(from oldFilename: String, to newFilename: String) {
+        currentNote?.filename = newFilename
+        lastOpenedFilename = newFilename
+
+        // Update navigation history
+        historyBack = historyBack.map { $0 == oldFilename ? newFilename : $0 }
+        historyForward = historyForward.map { $0 == oldFilename ? newFilename : $0 }
+
+        // Update pinned notes
+        var pinned = pinnedFilenames
+        if let idx = pinned.firstIndex(of: oldFilename) {
+            pinned[idx] = newFilename
+            pinnedFilenames = pinned
+        }
     }
 
     func deleteNote(_ note: Note) {
@@ -207,6 +230,28 @@ class AppState: ObservableObject {
     private func extractTitle(_ content: String) -> String {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { return "Untitled" }
+
+        // Try parsing as JSON (TipTap editor format)
+        if trimmed.hasPrefix("{"),
+           let data = trimmed.data(using: .utf8),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let contentArr = json["content"] as? [[String: Any]] {
+            for node in contentArr {
+                if let nodeContent = node["content"] as? [[String: Any]] {
+                    for inline in nodeContent {
+                        if let text = inline["text"] as? String {
+                            let title = text.trimmingCharacters(in: .whitespaces)
+                            if !title.isEmpty {
+                                return title.count > 60 ? String(title.prefix(60)) + "…" : title
+                            }
+                        }
+                    }
+                }
+            }
+            return "Untitled"
+        }
+
+        // Markdown format (backward compat)
         var firstLine = trimmed.components(separatedBy: "\n").first ?? ""
         while firstLine.hasPrefix("#") { firstLine = String(firstLine.dropFirst()) }
         firstLine = firstLine.trimmingCharacters(in: .whitespaces)

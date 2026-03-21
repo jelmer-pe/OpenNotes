@@ -76,6 +76,47 @@ class NoteStore {
         )
     }
 
+    /// Rename a note file based on its new title. Returns the new filename, or the old one if no rename needed.
+    func renameIfNeeded(_ filename: String, newTitle: String) -> String {
+        let newSlug = slugify(newTitle.isEmpty ? "untitled" : newTitle)
+        let oldSlug = extractSlug(from: filename)
+
+        // No change needed
+        if newSlug == oldSlug { return filename }
+
+        // Preserve the date prefix if present
+        let datePrefix: String
+        if filename.count >= 10,
+           filename[filename.index(filename.startIndex, offsetBy: 4)] == "-",
+           filename[filename.index(filename.startIndex, offsetBy: 7)] == "-" {
+            datePrefix = String(filename.prefix(10))
+        } else {
+            let dateStr = Self.dateFormatter.string(from: Date())
+            datePrefix = dateStr
+        }
+
+        var newFilename = "\(datePrefix)-\(newSlug).md"
+        // Avoid collisions
+        var counter = 1
+        while newFilename != filename && FileManager.default.fileExists(atPath: notesDirectory.appendingPathComponent(newFilename).path) {
+            newFilename = "\(datePrefix)-\(newSlug)-\(counter).md"
+            counter += 1
+        }
+
+        if newFilename == filename { return filename }
+
+        let oldURL = notesDirectory.appendingPathComponent(filename)
+        let newURL = notesDirectory.appendingPathComponent(newFilename)
+        do {
+            try FileManager.default.moveItem(at: oldURL, to: newURL)
+            print("[NoteStore] Renamed \(filename) → \(newFilename)")
+            return newFilename
+        } catch {
+            print("[NoteStore] Rename failed: \(error)")
+            return filename
+        }
+    }
+
     func deleteNote(_ filename: String) {
         let url = notesDirectory.appendingPathComponent(filename)
         try? FileManager.default.removeItem(at: url)
@@ -83,12 +124,53 @@ class NoteStore {
 
     // MARK: - Private
 
+    /// Extract the slug portion from a filename like "2026-03-20-my-title.md" → "my-title"
+    private func extractSlug(from filename: String) -> String {
+        var name = filename
+        if name.hasSuffix(".md") { name = String(name.dropLast(3)) }
+        // Remove date prefix (yyyy-MM-dd-)
+        if name.count > 11,
+           name[name.index(name.startIndex, offsetBy: 4)] == "-",
+           name[name.index(name.startIndex, offsetBy: 7)] == "-",
+           name[name.index(name.startIndex, offsetBy: 10)] == "-" {
+            name = String(name.dropFirst(11))
+        }
+        // Remove trailing counter (-1, -2, etc.)
+        if let lastDash = name.lastIndex(of: "-"),
+           let suffix = Int(name[name.index(after: lastDash)...]) {
+            name = String(name[..<lastDash])
+        }
+        return name
+    }
+
     private func extractTitle(content: String, filename: String) -> String {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
             return "Untitled"
         }
-        // First line is the title, strip any markdown heading prefix
+
+        // Try parsing as JSON (TipTap editor format)
+        if trimmed.hasPrefix("{"),
+           let data = trimmed.data(using: .utf8),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let contentArr = json["content"] as? [[String: Any]] {
+            // Find first node with text content
+            for node in contentArr {
+                if let nodeContent = node["content"] as? [[String: Any]] {
+                    for inline in nodeContent {
+                        if let text = inline["text"] as? String {
+                            let title = text.trimmingCharacters(in: .whitespaces)
+                            if !title.isEmpty {
+                                return title.count > 60 ? String(title.prefix(60)) + "…" : title
+                            }
+                        }
+                    }
+                }
+            }
+            return "Untitled"
+        }
+
+        // Markdown format (backward compat)
         var firstLine = trimmed.components(separatedBy: "\n").first ?? ""
         // Remove heading markers
         while firstLine.hasPrefix("#") {
@@ -105,7 +187,7 @@ class NoteStore {
         return firstLine
     }
 
-    private func slugify(_ text: String) -> String {
+    func slugify(_ text: String) -> String {
         let slug = text
             .lowercased()
             .replacingOccurrences(of: #"[^a-z0-9]+"#, with: "-", options: .regularExpression)

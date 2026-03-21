@@ -38,7 +38,13 @@ struct EditorWebView: NSViewRepresentable {
         // When the current note changes, load its content
         if let note = appState.currentNote,
            note.filename != context.coordinator.loadedFilename {
-            context.coordinator.loadNote(note)
+            // If this is just a rename (same content), update the tracked filename without reloading
+            if let loaded = context.coordinator.loadedFilename,
+               note.content == context.coordinator.lastContent {
+                context.coordinator.loadedFilename = note.filename
+            } else {
+                context.coordinator.loadNote(note)
+            }
         }
 
         // Sync dimmed state with hover
@@ -57,6 +63,7 @@ struct EditorWebView: NSViewRepresentable {
         var appState: AppState
         var webView: WKWebView?
         var loadedFilename: String?
+        var lastContent: String?
         var isDimmed = false
         private var isReady = false
         private var pendingNote: Note?
@@ -72,8 +79,9 @@ struct EditorWebView: NSViewRepresentable {
                     .replacingOccurrences(of: "`", with: "\\`")
                     .replacingOccurrences(of: "$", with: "\\$")
 
-                webView?.evaluateJavaScript("loadMarkdown(`\(escaped)`)")
+                webView?.evaluateJavaScript("loadContent(`\(escaped)`)")
                 loadedFilename = note.filename
+                lastContent = note.content
             } else {
                 pendingNote = note
             }
@@ -101,8 +109,9 @@ struct EditorWebView: NSViewRepresentable {
                     self?.focusEditor()
 
                 case "contentChanged":
-                    if let markdown = json["markdown"] as? String {
-                        self?.appState.contentChanged(markdown)
+                    if let jsonStr = json["json"] as? String {
+                        self?.lastContent = jsonStr
+                        self?.appState.contentChanged(jsonStr)
                     }
 
 

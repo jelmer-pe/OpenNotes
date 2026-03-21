@@ -258,11 +258,9 @@ function createEditor() {
     ],
     autofocus: true,
     onUpdate: ({ editor }) => {
-      let md = editor.storage.markdown.getMarkdown()
-      // Strip zero-width spaces used as empty paragraph placeholders
-      md = md.replace(/\u200B/g, '')
+      const json = JSON.stringify(editor.getJSON())
       window.webkit?.messageHandlers?.bridge?.postMessage(
-        JSON.stringify({ type: 'contentChanged', markdown: md })
+        JSON.stringify({ type: 'contentChanged', json: json })
       )
     },
     onTransaction: () => {
@@ -406,19 +404,17 @@ window.moveListItemFromSwift = function(direction) {
   }
 }
 
-// Called from Swift to load markdown content
-window.loadMarkdown = function(md) {
+// Called from Swift to load content (JSON or markdown for backward compat)
+window.loadContent = function(content) {
   if (editor) {
-    // Restore empty paragraphs: each pair of extra newlines beyond \n\n = one empty paragraph
-    const preserved = md.replace(/\n{3,}/g, (match) => {
-      const emptyParas = Math.floor((match.length - 2) / 2)
-      let result = '\n\n'
-      for (let i = 0; i < emptyParas; i++) {
-        result += '\u200B\n\n'
-      }
-      return result
-    })
-    editor.commands.setContent(preserved)
+    let parsed
+    try {
+      parsed = JSON.parse(content)
+    } catch (e) {
+      // Not JSON — treat as markdown (old format)
+      parsed = content
+    }
+    editor.commands.setContent(parsed)
     // Reset editor state to clear undo history — prevents Cmd+Z crossing between notes
     const freshState = EditorState.create({
       doc: editor.state.doc,
