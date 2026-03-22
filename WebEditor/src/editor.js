@@ -1,11 +1,112 @@
-import { Editor, Extension, InputRule } from '@tiptap/core'
+import { Editor, Extension, InputRule, Node, mergeAttributes } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 import TaskList from '@tiptap/extension-task-list'
 import TaskItem from '@tiptap/extension-task-item'
 import Link from '@tiptap/extension-link'
+import Image from '@tiptap/extension-image'
 import Placeholder from '@tiptap/extension-placeholder'
 import { Markdown } from 'tiptap-markdown'
 import { TextSelection, EditorState } from '@tiptap/pm/state'
+
+// Custom Image extension with NodeView for thumbnail, hover UI, delete, popup
+const CustomImage = Image.extend({
+  addNodeView() {
+    return ({ node, editor, getPos }) => {
+      const wrapper = document.createElement('div')
+      wrapper.className = 'img-wrap'
+
+      const img = document.createElement('img')
+      img.src = node.attrs.src
+      if (node.attrs.alt) img.alt = node.attrs.alt
+      if (node.attrs.title) img.title = node.attrs.title
+
+      // Action buttons container
+      const actions = document.createElement('div')
+      actions.className = 'img-actions'
+
+      // Delete button
+      const del = document.createElement('div')
+      del.className = 'img-btn'
+      del.innerHTML = '<svg width="10" height="10" viewBox="0 0 10 10"><line x1="2" y1="2" x2="8" y2="8" stroke="white" stroke-width="1.5" stroke-linecap="round"/><line x1="8" y1="2" x2="2" y2="8" stroke="white" stroke-width="1.5" stroke-linecap="round"/></svg>'
+      del.addEventListener('mousedown', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        const pos = getPos()
+        editor.chain().focus().deleteRange({ from: pos, to: pos + node.nodeSize }).run()
+      })
+
+      // Copy to clipboard button
+      const copy = document.createElement('div')
+      copy.className = 'img-btn'
+      copy.innerHTML = '<svg width="10" height="10" viewBox="0 0 16 16" fill="none"><rect x="5" y="5" width="9" height="9" rx="1.5" stroke="white" stroke-width="1.5"/><path d="M11 5V3.5A1.5 1.5 0 009.5 2h-6A1.5 1.5 0 002 3.5v6A1.5 1.5 0 003.5 11H5" stroke="white" stroke-width="1.5"/></svg>'
+      copy.addEventListener('mousedown', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        window.webkit?.messageHandlers?.bridge?.postMessage(
+          JSON.stringify({ type: 'copyImage', src: node.attrs.src })
+        )
+      })
+
+      // Save to downloads button
+      const save = document.createElement('div')
+      save.className = 'img-btn'
+      save.innerHTML = '<svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M8 2v8M8 10l-3-3M8 10l3-3" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 12v1.5A1.5 1.5 0 003.5 15h9a1.5 1.5 0 001.5-1.5V12" stroke="white" stroke-width="1.5" stroke-linecap="round"/></svg>'
+      save.addEventListener('mousedown', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        window.webkit?.messageHandlers?.bridge?.postMessage(
+          JSON.stringify({ type: 'saveImage', src: node.attrs.src })
+        )
+      })
+
+      // Metadata label
+      const meta = document.createElement('div')
+      meta.className = 'img-meta'
+      const updateMeta = () => {
+        const w = img.naturalWidth
+        const h = img.naturalHeight
+        if (w && h) {
+          fetch(img.src, { method: 'HEAD' })
+            .then(r => {
+              const bytes = parseInt(r.headers.get('content-length') || '0')
+              let size = ''
+              if (bytes > 1048576) size = (bytes / 1048576).toFixed(1) + ' MB'
+              else if (bytes > 0) size = Math.round(bytes / 1024) + ' KB'
+              meta.textContent = `${w}×${h}` + (size ? ` · ${size}` : '')
+            })
+            .catch(() => { meta.textContent = `${w}×${h}` })
+        }
+      }
+      if (img.complete && img.naturalWidth) updateMeta()
+      else img.addEventListener('load', updateMeta)
+
+      // Click to open popup
+      img.addEventListener('click', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        openImagePopup(img.src)
+      })
+
+      actions.appendChild(del)
+      actions.appendChild(copy)
+      actions.appendChild(save)
+
+      wrapper.appendChild(img)
+      wrapper.appendChild(actions)
+      wrapper.appendChild(meta)
+
+      return {
+        dom: wrapper,
+        update(updatedNode) {
+          if (updatedNode.type.name !== 'image') return false
+          img.src = updatedNode.attrs.src
+          return true
+        },
+        destroy() {},
+      }
+    }
+  },
+})
 
 let editor = null
 
@@ -247,6 +348,7 @@ function createEditor() {
       TaskList,
       TaskItem.configure({ nested: true }),
       Link.configure({ openOnClick: false }),
+      CustomImage.configure({ inline: false, allowBase64: false }),
       Placeholder.configure({ placeholder: 'Start typing...' }),
       Markdown.configure({
         html: false,
@@ -522,8 +624,125 @@ function setupToolbarTooltips() {
   })
 }
 
+// Image paste/drop support
+function setupImageHandlers() {
+  const editorEl = document.getElementById('editor')
+
+  // Handle paste
+  editorEl.addEventListener('paste', (e) => {
+    const items = e.clipboardData?.items
+    if (!items) return
+
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault()
+        const file = item.getAsFile()
+        if (file) sendImageToSwift(file)
+        return
+      }
+    }
+  })
+
+  // Handle drag & drop
+  editorEl.addEventListener('drop', (e) => {
+    const files = e.dataTransfer?.files
+    if (!files) return
+
+    for (const file of files) {
+      if (file.type.startsWith('image/')) {
+        e.preventDefault()
+        sendImageToSwift(file)
+        return
+      }
+    }
+  })
+
+  editorEl.addEventListener('dragover', (e) => {
+    if (e.dataTransfer?.types?.includes('Files')) {
+      e.preventDefault()
+    }
+  })
+}
+
+function sendImageToSwift(file) {
+  const reader = new FileReader()
+  reader.onload = () => {
+    const base64 = reader.result.split(',')[1]
+    window.webkit?.messageHandlers?.bridge?.postMessage(
+      JSON.stringify({ type: 'imagePaste', data: base64, mimeType: file.type })
+    )
+  }
+  reader.readAsDataURL(file)
+}
+
+// Called from Swift after image is saved to disk
+window.insertImage = function(url) {
+  if (editor) {
+    editor.chain().focus().setImage({ src: url }).run()
+    // Move cursor after the image so user can paste another immediately
+    setTimeout(() => {
+      editor.commands.focus('end')
+    }, 50)
+  }
+}
+
+// --- Image UI: wrappers, popup, metadata, delete, grid ---
+
+
+function openImagePopup(src) {
+  const overlay = document.createElement('div')
+  overlay.className = 'image-popup-overlay'
+
+  const container = document.createElement('div')
+  container.className = 'image-popup-container'
+
+  const popupImg = document.createElement('img')
+  popupImg.src = src
+
+  const btn = document.createElement('button')
+  btn.className = 'image-popup-btn'
+  btn.textContent = 'Open in Preview'
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation()
+    // Ask Swift to open in Preview
+    window.webkit?.messageHandlers?.bridge?.postMessage(
+      JSON.stringify({ type: 'openInPreview', src: src })
+    )
+  })
+
+  // Close X button
+  const closeBtn = document.createElement('div')
+  closeBtn.className = 'image-popup-close'
+  closeBtn.textContent = '✕'
+  closeBtn.addEventListener('click', (e) => {
+    e.stopPropagation()
+    overlay.remove()
+  })
+
+  container.appendChild(popupImg)
+  container.appendChild(btn)
+  container.appendChild(closeBtn)
+  overlay.appendChild(container)
+  document.body.appendChild(overlay)
+
+  // Click overlay (outside image) to close
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.remove()
+  })
+
+  // Escape to close
+  const escHandler = (e) => {
+    if (e.key === 'Escape') {
+      overlay.remove()
+      document.removeEventListener('keydown', escHandler)
+    }
+  }
+  document.addEventListener('keydown', escHandler)
+}
+
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
   createEditor()
   setupToolbarTooltips()
+  setupImageHandlers()
 })
