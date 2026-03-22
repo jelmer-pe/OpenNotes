@@ -21,6 +21,7 @@ class AppState: ObservableObject {
     // Auto-save
     private var saveTimer: Timer?
     private var pendingContent: String?
+    private var pendingMarkdown: String?
 
     // Last opened note persistence
     var lastOpenedFilename: String? {
@@ -149,8 +150,9 @@ class AppState: ObservableObject {
         lastOpenedFilename = note.filename
     }
 
-    func contentChanged(_ markdown: String) {
-        pendingContent = markdown
+    func contentChanged(_ json: String, markdown: String) {
+        pendingContent = json
+        pendingMarkdown = markdown
 
         saveTimer?.invalidate()
         saveTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
@@ -160,6 +162,8 @@ class AppState: ObservableObject {
 
     func flushSave() {
         guard let content = pendingContent, let filename = currentNote?.filename else { return }
+        let markdown = pendingMarkdown ?? ""
+
         // Update the in-memory note
         let newTitle = extractTitle(content)
         currentNote?.content = content
@@ -171,9 +175,10 @@ class AppState: ObservableObject {
         if newFilename != filename {
             updateFilenameReferences(from: filename, to: newFilename)
         }
-        noteStore.saveNote(newFilename, content: content)
+        noteStore.saveNote(newFilename, json: content, markdown: markdown)
 
         pendingContent = nil
+        pendingMarkdown = nil
         saveTimer?.invalidate()
     }
 

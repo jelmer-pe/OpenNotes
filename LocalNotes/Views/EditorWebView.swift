@@ -114,7 +114,8 @@ struct EditorWebView: NSViewRepresentable {
                 case "contentChanged":
                     if let jsonStr = json["json"] as? String {
                         self?.lastContent = jsonStr
-                        self?.appState.contentChanged(jsonStr)
+                        let markdown = json["markdown"] as? String ?? ""
+                        self?.appState.contentChanged(jsonStr, markdown: markdown)
                     }
 
                 case "imagePaste":

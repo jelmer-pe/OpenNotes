@@ -361,8 +361,9 @@ function createEditor() {
     autofocus: true,
     onUpdate: ({ editor }) => {
       const json = JSON.stringify(editor.getJSON())
+      const markdown = editor.storage.markdown.getMarkdown()
       window.webkit?.messageHandlers?.bridge?.postMessage(
-        JSON.stringify({ type: 'contentChanged', json: json })
+        JSON.stringify({ type: 'contentChanged', json: json, markdown: markdown })
       )
     },
     onTransaction: () => {
