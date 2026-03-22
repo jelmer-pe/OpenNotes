@@ -25,10 +25,8 @@ class FloatingPanel: NSPanel, NSWindowDelegate {
         visualEffect.state = .active
         visualEffect.translatesAutoresizingMaskIntoConstraints = false
 
-        // Semi-transparent overlay to control opacity
-        let tintView = NSView()
-        tintView.wantsLayer = true
-        tintView.layer?.backgroundColor = NSColor(white: 0.925, alpha: 0.85).cgColor
+        // Semi-transparent overlay to control opacity (adapts to dark/light mode)
+        let tintView = AppearanceAwareTintView()
         tintView.translatesAutoresizingMaskIntoConstraints = false
 
         let container = NSView()
@@ -133,5 +131,28 @@ class FloatingPanel: NSPanel, NSWindowDelegate {
             app.activate()
         }
         previousApp = nil
+    }
+}
+
+class AppearanceAwareTintView: NSView {
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        updateTint()
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateTint()
+    }
+
+    private func updateTint() {
+        if effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+            layer?.backgroundColor = NSColor(white: 0.118, alpha: 0.85).cgColor
+        } else {
+            layer?.backgroundColor = NSColor(white: 0.925, alpha: 0.85).cgColor
+        }
     }
 }
