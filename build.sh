@@ -50,7 +50,39 @@ cp .build/release/LocalNotes_LocalNotes.bundle/editor.html "$APP_DIR/Resources/"
 cp .build/release/LocalNotes_LocalNotes.bundle/editor.bundle.js "$APP_DIR/Resources/"
 cp .build/release/LocalNotes_LocalNotes.bundle/editor.css "$APP_DIR/Resources/"
 
+# --- Build Quick Look extension ---
+echo "Building Quick Look extension..."
+SDK_PATH=$(xcrun --show-sdk-path)
+ARCH=$(uname -m)
+APPEX_DIR="$APP_DIR/PlugIns/MarkdownPreview.appex/Contents"
+mkdir -p "$APPEX_DIR/MacOS"
+
+# Compile as executable with NSExtensionMain entry point (how Xcode builds extensions)
+swiftc -parse-as-library \
+    -target "${ARCH}-apple-macosx14.0" \
+    -sdk "$SDK_PATH" \
+    -application-extension \
+    -module-name MarkdownPreview \
+    -framework Cocoa \
+    -framework Quartz \
+    -Xlinker -e -Xlinker _NSExtensionMain \
+    -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker QuickLookExtension/Info.plist \
+    -o "$APPEX_DIR/MacOS/MarkdownPreview" \
+    QuickLookExtension/PreviewProvider.swift
+
+cp QuickLookExtension/Info.plist "$APPEX_DIR/Info.plist"
+
+# --- Code sign (ad-hoc, with sandbox entitlements for extension) ---
+echo "Signing..."
+codesign --force --sign - \
+    --entitlements QuickLookExtension/MarkdownPreview.entitlements \
+    "$APP_DIR/PlugIns/MarkdownPreview.appex"
+codesign --force --sign - "Open Notes.app"
+
 echo ""
-echo "Done! Built Open Notes.app"
+echo "Done! Built Open Notes.app (with Quick Look extension)"
 echo "  Run with: open \"Open Notes.app\""
 echo "  Or install to /Applications: cp -r \"Open Notes.app\" /Applications/"
+echo ""
+echo "  After first launch, test Quick Look with:"
+echo "    qlmanage -p ~/Documents/Notes/some-note.md"
