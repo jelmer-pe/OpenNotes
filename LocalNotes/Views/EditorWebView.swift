@@ -85,6 +85,7 @@ struct EditorWebView: NSViewRepresentable {
                 webView?.evaluateJavaScript("loadContent(`\(escaped)`)")
                 loadedFilename = note.filename
                 lastContent = note.content
+                sendNotesList()
             } else {
                 pendingNote = note
             }
@@ -110,6 +111,7 @@ struct EditorWebView: NSViewRepresentable {
                         self?.loadNote(note)
                     }
                     self?.focusEditor()
+                    self?.sendNotesList()
 
                 case "contentChanged":
                     if let jsonStr = json["json"] as? String {
@@ -162,9 +164,34 @@ struct EditorWebView: NSViewRepresentable {
                         try? FileManager.default.copyItem(at: sourceURL, to: destURL)
                     }
 
+                case "openNote":
+                    if let filename = json["filename"] as? String {
+                        self?.appState.openNoteByFilename(filename)
+                    }
+
+                case "openURL":
+                    if let urlStr = json["url"] as? String,
+                       let url = URL(string: urlStr) {
+                        NSWorkspace.shared.open(url)
+                    }
+
                 default:
                     break
                 }
+            }
+        }
+
+        func sendNotesList() {
+            let notes = appState.noteStore.listNotes()
+            let notesData = notes.map { note -> [String: String] in
+                return ["title": note.title, "filename": note.filename]
+            }
+            if let jsonData = try? JSONSerialization.data(withJSONObject: notesData),
+               let jsonStr = String(data: jsonData, encoding: .utf8) {
+                let escaped = jsonStr
+                    .replacingOccurrences(of: "\\", with: "\\\\")
+                    .replacingOccurrences(of: "'", with: "\\'")
+                webView?.evaluateJavaScript("setNotesList(\(jsonStr))")
             }
         }
 

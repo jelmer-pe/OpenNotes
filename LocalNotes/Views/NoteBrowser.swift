@@ -3,6 +3,8 @@ import SwiftUI
 struct NoteBrowser: View {
     @ObservedObject var appState: AppState
     @State private var searchText = ""
+    @State private var scrollCounter = 0
+    @State private var scrollId: String? = nil
     @FocusState private var isSearchFocused: Bool
 
     private var selectedIndex: Int {
@@ -55,17 +57,34 @@ struct NoteBrowser: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .shadow(color: .black.opacity(0.18), radius: 24, y: 10)
         .onAppear {
-            isSearchFocused = true
+            // Delay focus to ensure view is fully rendered and WKWebView doesn't steal it
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                isSearchFocused = true
+            }
             appState.browserSelectedIndex = 0
         }
         .onKeyPress(.upArrow) {
             if appState.confirmingDeleteNote != nil { return .ignored }
-            if selectedIndex > 0 { selectedIndex -= 1 }
+            if selectedIndex > 0 {
+                selectedIndex -= 1
+                let notes = filteredNotes
+                if selectedIndex < notes.count {
+                    scrollId = notes[selectedIndex].id
+                    scrollCounter += 1
+                }
+            }
             return .handled
         }
         .onKeyPress(.downArrow) {
             if appState.confirmingDeleteNote != nil { return .ignored }
-            if selectedIndex < filteredNotes.count - 1 { selectedIndex += 1 }
+            if selectedIndex < filteredNotes.count - 1 {
+                selectedIndex += 1
+                let notes = filteredNotes
+                if selectedIndex < notes.count {
+                    scrollId = notes[selectedIndex].id
+                    scrollCounter += 1
+                }
+            }
             return .handled
         }
         .onKeyPress(.escape) {
@@ -181,10 +200,11 @@ struct NoteBrowser: View {
                 }
                 .padding(.vertical, 6)
             }
-            .onChange(of: selectedIndex) { _, newValue in
-                let notes = filteredNotes
-                if newValue < notes.count {
-                    proxy.scrollTo(notes[newValue].id, anchor: .center)
+            .onChange(of: scrollCounter) { _, _ in
+                if let id = scrollId {
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        proxy.scrollTo(id, anchor: .center)
+                    }
                 }
             }
         }
@@ -244,6 +264,7 @@ struct NoteRow: View {
     let onHover: () -> Void
     let onDelete: () -> Void
     let onTogglePin: () -> Void
+    @State private var lastMouseLocation: CGPoint = .zero
 
     var body: some View {
         HStack(spacing: 0) {
@@ -263,7 +284,14 @@ struct NoteRow: View {
         .contentShape(Rectangle())
         .onTapGesture { onSelect() }
         .onHover { hovering in
-            if hovering { onHover() }
+            if hovering {
+                let currentMouse = NSEvent.mouseLocation
+                if abs(currentMouse.x - lastMouseLocation.x) > 1 ||
+                   abs(currentMouse.y - lastMouseLocation.y) > 1 {
+                    lastMouseLocation = currentMouse
+                    onHover()
+                }
+            }
         }
     }
 

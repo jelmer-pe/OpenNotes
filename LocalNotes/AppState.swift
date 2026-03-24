@@ -108,6 +108,12 @@ class AppState: ObservableObject {
         isShowingBrowser = false
     }
 
+    func openNoteByFilename(_ filename: String) {
+        if let note = noteStore.readNote(filename) {
+            openNote(note)
+        }
+    }
+
     func createNewNote() {
         flushSave()
 

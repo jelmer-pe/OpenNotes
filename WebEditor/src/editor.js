@@ -170,6 +170,32 @@ const TaskListInputRule = Extension.create({
   },
 })
 
+// Arrow auto-replace: -> becomes →, <- becomes ←
+const ArrowInputRule = Extension.create({
+  name: 'arrowInputRule',
+
+  addInputRules() {
+    return [
+      new InputRule({
+        find: /->$/,
+        handler: ({ state, range }) => {
+          const tr = state.tr
+          tr.replaceWith(range.from, range.to, state.schema.text('→'))
+          return tr
+        },
+      }),
+      new InputRule({
+        find: /<-$/,
+        handler: ({ state, range }) => {
+          const tr = state.tr
+          tr.replaceWith(range.from, range.to, state.schema.text('←'))
+          return tr
+        },
+      }),
+    ]
+  },
+})
+
 // Custom extension for extra keyboard shortcuts
 const ExtraShortcuts = Extension.create({
   name: 'extraShortcuts',
@@ -347,7 +373,11 @@ function createEditor() {
       }),
       TaskList,
       TaskItem.configure({ nested: true }),
-      Link.configure({ openOnClick: false }),
+      Link.configure({
+        openOnClick: false,
+        validate: href => true,
+        protocols: ['opennotes'],
+      }),
       CustomImage.configure({ inline: false, allowBase64: false }),
       Placeholder.configure({ placeholder: 'Start typing...' }),
       Markdown.configure({
@@ -357,6 +387,7 @@ function createEditor() {
       }),
       ExtraShortcuts,
       TaskListInputRule,
+      ArrowInputRule,
     ],
     autofocus: true,
     onUpdate: ({ editor }) => {
@@ -524,6 +555,9 @@ window.loadContent = function(content) {
       plugins: editor.state.plugins,
     })
     editor.view.updateState(freshState)
+    // Move cursor to top and scroll viewport to top
+    editor.commands.setTextSelection(0)
+    window.scrollTo(0, 0)
   }
 }
 
@@ -740,9 +774,228 @@ function openImagePopup(src) {
   document.addEventListener('keydown', escHandler)
 }
 
+// --- Note linking: [[ trigger ---
+
+let noteLinkState = { active: false, range: null, query: '' }
+let notesList = [] // populated from Swift
+
+window.setNotesList = function(notes) {
+  notesList = notes // [{title, filename}, ...]
+}
+
+function setupNoteLinkHandler() {
+  // Detect [[ by listening to editor input events
+  document.getElementById('editor').addEventListener('input', () => {
+    if (noteLinkState.active) {
+      checkNoteLinkQuery()
+      return
+    }
+    // Check if [[ was just typed
+    const { state } = editor
+    const pos = state.selection.from
+    if (pos >= 2) {
+      const textBefore = state.doc.textBetween(pos - 2, pos, '')
+      if (textBefore === '[[') {
+        noteLinkState.active = true
+        noteLinkState.startPos = pos - 2
+        noteLinkState.query = ''
+        showNoteLinkDropdown()
+      }
+    }
+  })
+
+  // Listen for keydown to handle navigation and closing
+  document.getElementById('editor').addEventListener('keydown', (e) => {
+    if (!noteLinkState.active) return
+
+    const dropdown = document.getElementById('note-link-dropdown')
+    if (!dropdown) return
+
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      closeNoteLinkDropdown()
+      return
+    }
+
+    if (e.key === 'Backspace') {
+      // Check on next tick if we've backspaced past [[
+      setTimeout(() => {
+        const pos = editor.state.selection.from
+        if (pos <= noteLinkState.startPos + 1) {
+          closeNoteLinkDropdown()
+        } else {
+          checkNoteLinkQuery()
+        }
+      }, 0)
+      return
+    }
+
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      const items = dropdown.querySelectorAll('.note-link-item')
+      const current = dropdown.querySelector('.note-link-item.selected')
+      let idx = Array.from(items).indexOf(current)
+      if (e.key === 'ArrowDown') idx = Math.min(idx + 1, items.length - 1)
+      else idx = Math.max(idx - 1, 0)
+      items.forEach(i => i.classList.remove('selected'))
+      items[idx]?.classList.add('selected')
+      items[idx]?.scrollIntoView({ block: 'nearest' })
+      return
+    }
+
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      const selected = dropdown.querySelector('.note-link-item.selected')
+      if (selected) {
+        insertNoteLink(selected.dataset.filename, selected.dataset.title)
+      }
+      closeNoteLinkDropdown()
+      return
+    }
+
+    // Update query on next tick
+    setTimeout(() => checkNoteLinkQuery(), 0)
+  })
+}
+
+function checkNoteLinkQuery() {
+  if (!noteLinkState.active || !editor) return
+
+  const { state } = editor
+  const cursorPos = state.selection.from
+  const startPos = noteLinkState.startPos
+
+  // Extract text between [[ and cursor
+  if (cursorPos <= startPos + 2) {
+    noteLinkState.query = ''
+  } else {
+    const text = state.doc.textBetween(startPos + 2, cursorPos, '')
+    // If user typed ]], close
+    if (text.endsWith(']]')) {
+      closeNoteLinkDropdown()
+      return
+    }
+    noteLinkState.query = text
+  }
+
+  showNoteLinkDropdown()
+}
+
+function showNoteLinkDropdown() {
+  let dropdown = document.getElementById('note-link-dropdown')
+  if (!dropdown) {
+    dropdown = document.createElement('div')
+    dropdown.id = 'note-link-dropdown'
+    document.body.appendChild(dropdown)
+  }
+
+  const q = noteLinkState.query.toLowerCase()
+  const filtered = notesList.filter(n => n.title.toLowerCase().includes(q)).slice(0, 8)
+
+  if (filtered.length === 0) {
+    dropdown.innerHTML = '<div class="note-link-empty">No matching notes</div>'
+  } else {
+    dropdown.innerHTML = filtered.map((n, i) =>
+      `<div class="note-link-item${i === 0 ? ' selected' : ''}" data-filename="${n.filename}" data-title="${n.title.replace(/"/g, '&quot;')}">${n.title}</div>`
+    ).join('')
+
+    dropdown.querySelectorAll('.note-link-item').forEach(item => {
+      item.addEventListener('mousedown', (e) => {
+        e.preventDefault()
+        insertNoteLink(item.dataset.filename, item.dataset.title)
+        closeNoteLinkDropdown()
+      })
+    })
+  }
+
+  // Position dropdown near cursor using viewport coords (fixed positioning)
+  try {
+    const coords = editor.view.coordsAtPos(editor.state.selection.from)
+    dropdown.style.top = (coords.bottom + 4) + 'px'
+    dropdown.style.left = Math.min(coords.left, window.innerWidth - 240) + 'px'
+  } catch (e) {
+    dropdown.style.top = '100px'
+    dropdown.style.left = '40px'
+  }
+  dropdown.style.display = 'block'
+}
+
+function insertNoteLink(filename, title) {
+  if (!editor) return
+  const { state } = editor
+  const startPos = noteLinkState.startPos
+  const endPos = state.selection.from
+
+  // Delete the [[ and query text, then insert a styled link
+  const tr = state.tr
+  tr.delete(startPos, endPos)
+  const linkMark = state.schema.marks.link.create({ href: `opennotes://${filename}` })
+  const linkText = state.schema.text(title, [linkMark])
+  const space = state.schema.text(' ')
+  tr.insert(startPos, linkText)
+  tr.insert(startPos + title.length, space)
+  tr.setSelection(TextSelection.create(tr.doc, startPos + title.length + 1))
+  editor.view.dispatch(tr)
+  editor.view.focus()
+}
+
+function closeNoteLinkDropdown() {
+  noteLinkState.active = false
+  noteLinkState.query = ''
+  const dropdown = document.getElementById('note-link-dropdown')
+  if (dropdown) dropdown.remove()
+}
+
+// Handle clicks on links (both note links and web links)
+function setupLinkClicks() {
+  const editorEl = document.getElementById('editor')
+  let hoveredLink = null
+
+  // Show pointer cursor on link hover
+  editorEl.addEventListener('mouseover', (e) => {
+    const link = e.target.closest('a')
+    if (link) {
+      hoveredLink = link
+      link.style.cursor = 'pointer'
+    }
+  })
+
+  editorEl.addEventListener('mouseout', (e) => {
+    const link = e.target.closest('a')
+    if (link) {
+      hoveredLink = null
+      link.style.cursor = ''
+    }
+  })
+
+  editorEl.addEventListener('click', (e) => {
+    const link = e.target.closest('a')
+    if (!link) return
+
+    const href = link.getAttribute('href')
+    if (!href) return
+
+    e.preventDefault()
+    e.stopPropagation()
+
+    if (href.startsWith('opennotes://')) {
+      const filename = href.replace('opennotes://', '')
+      window.webkit?.messageHandlers?.bridge?.postMessage(
+        JSON.stringify({ type: 'openNote', filename: filename })
+      )
+    } else {
+      window.webkit?.messageHandlers?.bridge?.postMessage(
+        JSON.stringify({ type: 'openURL', url: href })
+      )
+    }
+  })
+}
+
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
   createEditor()
   setupToolbarTooltips()
   setupImageHandlers()
+  setupNoteLinkHandler()
+  setupLinkClicks()
 })

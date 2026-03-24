@@ -25,6 +25,7 @@ class NoteStore {
         case "image/jpeg", "image/jpg": ext = "jpg"
         case "image/gif": ext = "gif"
         case "image/webp": ext = "webp"
+        case "image/svg+xml": ext = "svg"
         default: ext = "png"
         }
 
